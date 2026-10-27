@@ -1,4 +1,4 @@
-git branch -m# Aurelia HBS — Hệ thống Đặt phòng Khách sạn (full stack)
+# Aurelia HBS — Hệ thống Đặt phòng Khách sạn (full stack)
 
 Hệ thống đặt phòng cho **Aurelia Oceanfront Resort, Đà Nẵng** (45 phòng) theo SRS v2.0, gồm ba cổng:
 
