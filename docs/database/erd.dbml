@@ -1,0 +1,3 @@
+cd ~/Documents/AURELIA-HBS
+pbpaste > docs/database/erd.dbml
+grep -c "^Table" docs/database/erd.dbml
