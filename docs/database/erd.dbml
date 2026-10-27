@@ -1,0 +1,291 @@
+// Aurelia HBS - ERD (PostgreSQL 16) - DB Lead: Tran Thi Khanh Huyen
+
+Table properties {
+  id uuid [pk]
+  name varchar(150) [not null]
+  address varchar(255) [not null]
+  tax_code varchar(20)
+  hotline varchar(20)
+  email varchar(255)
+  vat_rate numeric(5,2) [not null, default: 10]
+  service_rate numeric(5,2) [not null, default: 5]
+  check_in_time time [not null]
+  check_out_time time [not null]
+  currency char(3) [not null]
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table users {
+  id uuid [pk]
+  property_id uuid [ref: > properties.id]
+  full_name varchar(100) [not null]
+  email varchar(255) [not null, unique]
+  password_hash varchar(255)
+  phone varchar(20)
+  role varchar(20) [not null, note: 'GUEST | RECEPTIONIST | ADMIN']
+  oauth_provider varchar(20) [note: 'GOOGLE | APPLE']
+  must_change_password boolean
+  failed_login_count int
+  locked_until timestamptz
+  last_login_at timestamptz
+  is_active boolean
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table auth_tokens {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  type varchar(20) [not null, note: 'REFRESH | PASSWORD_RESET']
+  token_hash varchar(255) [not null, unique]
+  expires_at timestamptz [not null]
+  used_at timestamptz
+  revoked_at timestamptz
+  user_agent varchar(255)
+  ip varchar(64)
+  created_at timestamptz
+  indexes { (user_id, type) [name: 'idx_auth_tokens_user'] }
+}
+
+Table audit_logs {
+  id bigserial [pk]
+  user_id uuid [ref: > users.id]
+  action varchar(50) [not null]
+  entity_type varchar(50) [not null]
+  entity_id uuid [not null]
+  old_values jsonb
+  new_values jsonb
+  created_at timestamptz
+}
+
+Table room_types {
+  id uuid [pk]
+  property_id uuid [not null, ref: > properties.id]
+  name varchar(50) [not null]
+  slug varchar(60) [not null, unique]
+  description text
+  area_m2 numeric(5,1)
+  bed_type varchar(50)
+  view_type varchar(50)
+  max_adults int [not null]
+  max_children int [not null, default: 0]
+  base_price bigint [not null, note: 'VND']
+  status varchar(20) [not null, note: 'DRAFT | ACTIVE | ARCHIVED']
+  created_at timestamptz
+  updated_at timestamptz
+  indexes { (property_id, name) [unique] }
+}
+
+Table room_images {
+  id uuid [pk]
+  room_type_id uuid [not null, ref: > room_types.id]
+  url varchar(500) [not null]
+  object_key varchar(300) [not null]
+  caption varchar(100)
+  sort_order int
+  is_cover boolean
+}
+
+Table amenities {
+  id uuid [pk]
+  name varchar(80) [not null, unique]
+  category varchar(20) [not null, note: 'BATHROOM | TECH | REFRESHMENT | VIEW | GENERAL']
+  icon varchar(40)
+  is_filterable boolean
+}
+
+Table room_type_amenities {
+  room_type_id uuid [pk, ref: > room_types.id]
+  amenity_id uuid [pk, ref: > amenities.id]
+}
+
+Table rooms {
+  id uuid [pk]
+  property_id uuid [not null, ref: > properties.id]
+  room_number varchar(10) [not null]
+  floor int [not null]
+  room_type_id uuid [not null, ref: > room_types.id]
+  status varchar(20) [not null, note: 'AVAILABLE | OCCUPIED | DIRTY | OUT_OF_ORDER']
+  is_dnd boolean
+  description text
+  is_active boolean
+  created_at timestamptz
+  updated_at timestamptz
+  indexes { (property_id, room_number) [unique] }
+}
+
+Table room_plans {
+  id uuid [pk]
+  room_type_id uuid [not null, ref: > room_types.id]
+  plan_code varchar(5) [not null, note: 'EP | CP | MAP | AP']
+  plan_name varchar(100) [not null]
+  meals_included varchar(150)
+  surcharge_per_night bigint [not null, default: 0]
+  is_recommended boolean
+  is_active boolean
+  indexes { (room_type_id, plan_code) [unique] }
+}
+
+Table seasonal_rules {
+  id uuid [pk]
+  property_id uuid [not null, ref: > properties.id]
+  name varchar(100) [not null]
+  start_date date [not null]
+  end_date date [not null]
+  multiplier numeric(4,2) [not null, note: '0.5 - 3.0']
+  priority int
+  room_type_ids "uuid[]"
+  is_active boolean
+  created_at timestamptz
+}
+
+Table booking_channels {
+  code varchar(20) [pk]
+  name varchar(80) [not null]
+  commission_rate numeric(5,2)
+  color char(7) [not null]
+  is_active boolean
+}
+
+Table promotions {
+  id uuid [pk]
+  code varchar(30) [not null, unique]
+  discount_type varchar(10) [not null, note: 'PERCENT | AMOUNT']
+  discount_value bigint [not null]
+  min_nights int
+  book_before_days int
+  stay_from date
+  stay_to date
+  valid_from date [not null]
+  valid_to date [not null]
+  max_uses int
+  used_count int
+  is_active boolean
+}
+
+Table guests {
+  id uuid [pk]
+  user_id uuid [unique, ref: - users.id]
+  full_name varchar(150) [not null]
+  email varchar(255)
+  phone varchar(20) [not null]
+  id_type varchar(10) [note: 'CCCD | PASSPORT']
+  id_number varchar(30)
+  nationality char(2)
+  date_of_birth date
+  is_vip boolean
+  notes text
+  notes_updated_by uuid [ref: > users.id]
+  notes_updated_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+  indexes { phone [name: 'idx_guests_phone'] }
+}
+
+Table booking_groups {
+  id uuid [pk]
+  name varchar(150) [not null]
+  contact_guest_id uuid [ref: > guests.id]
+  channel_code varchar(20) [ref: > booking_channels.code]
+  notes text
+  created_at timestamptz
+}
+
+Table bookings {
+  id uuid [pk]
+  booking_ref varchar(20) [not null, unique, note: 'BK-YYYYMMDD-XXXX']
+  property_id uuid [not null, ref: > properties.id]
+  guest_id uuid [not null, ref: > guests.id]
+  room_id uuid [not null, ref: > rooms.id]
+  room_plan_id uuid [not null, ref: > room_plans.id]
+  group_id uuid [ref: > booking_groups.id]
+  promotion_id uuid [ref: > promotions.id]
+  channel_code varchar(20) [not null, ref: > booking_channels.code]
+  check_in_date date [not null]
+  check_out_date date [not null]
+  total_nights int [note: 'GENERATED, toi da 30']
+  adults int [not null]
+  children int [not null]
+  estimated_arrival varchar(20)
+  bed_preference varchar(10) [note: 'KING | TWIN']
+  special_requests text
+  room_amount bigint [not null]
+  discount_amount bigint [not null]
+  service_fee bigint [not null]
+  tax_amount bigint [not null]
+  total_amount bigint [not null]
+  commission_amount bigint [not null]
+  payment_status varchar(20) [not null, note: 'UNPAID | PARTIAL | PAID | REFUNDED']
+  status varchar(20) [not null, note: 'PENDING | CONFIRMED | CHECKED_IN | CHECKED_OUT | CANCELLED | NO_SHOW']
+  id_verified boolean
+  checked_in_at timestamptz
+  checked_out_at timestamptz
+  cancelled_at timestamptz
+  cancel_reason varchar(30)
+  cancel_note text
+  cancellation_fee bigint
+  refund_amount bigint
+  created_by uuid [ref: > users.id]
+  created_at timestamptz
+  updated_at timestamptz
+  indexes {
+    (room_id, check_in_date, check_out_date) [name: 'idx_bookings_room_dates']
+    guest_id [name: 'idx_bookings_guest']
+    status [name: 'idx_bookings_status']
+  }
+  Note: 'ex_bookings_no_overlap: EXCLUDE gist chong dat trung phong khi status CONFIRMED / CHECKED_IN'
+}
+
+Table cancellation_tiers {
+  id uuid [pk]
+  property_id uuid [not null, ref: > properties.id]
+  hours_from int [not null]
+  hours_to int
+  penalty_percent numeric(5,2) [not null]
+  description varchar(100)
+}
+
+Table booking_charges {
+  id uuid [pk]
+  booking_id uuid [not null, ref: > bookings.id]
+  type varchar(20) [not null, note: 'MINIBAR | FOOD_BEVERAGE | SPA | LAUNDRY | LATE_CHECKOUT | EXTRA_BED | OTHER']
+  description varchar(200)
+  quantity int [not null]
+  unit_price bigint [not null]
+  amount bigint [note: 'GENERATED = quantity * unit_price']
+  charged_at timestamptz
+  created_by uuid [ref: > users.id]
+}
+
+Table payments {
+  id uuid [pk]
+  booking_id uuid [not null, ref: > bookings.id]
+  type varchar(10) [not null, note: 'DEPOSIT | PAYMENT | REFUND']
+  method varchar(20) [not null, note: 'CASH | CARD | BANK_TRANSFER | MOMO | VNPAY | OTA_COLLECT']
+  amount bigint [not null]
+  status varchar(10) [not null, note: 'PENDING | COMPLETED | FAILED']
+  transaction_ref varchar(100)
+  paid_at timestamptz
+  note varchar(255)
+  created_by uuid [ref: > users.id]
+  created_at timestamptz
+  indexes { booking_id [name: 'idx_payments_booking'] }
+}
+
+Table housekeeping_tasks {
+  id uuid [pk]
+  room_id uuid [not null, ref: > rooms.id]
+  type varchar(20) [not null, note: 'CLEANING | INSPECTION | MAINTENANCE']
+  status varchar(20) [not null, note: 'OPEN | IN_PROGRESS | DONE | CANCELLED']
+  from_status varchar(20)
+  to_status varchar(20)
+  reason varchar(255)
+  assigned_to varchar(100)
+  expected_done_at timestamptz
+  started_at timestamptz
+  completed_at timestamptz
+  created_by uuid [ref: > users.id]
+  created_at timestamptz
+  indexes { (room_id, status) [name: 'idx_hk_room_status'] }
+}
