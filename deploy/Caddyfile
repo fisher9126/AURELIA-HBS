@@ -1,0 +1,32 @@
+# SITE_ADDRESS=aurelia.example.com → HTTPS tự động; SITE_ADDRESS=:80 → HTTP theo IP (demo)
+{$SITE_ADDRESS}
+
+encode zstd gzip
+
+# Ảnh phòng trên kho S3: /media/aurelia-media/... → s3:8333/aurelia-media/...
+handle_path /media/* {
+	reverse_proxy s3:8333
+}
+
+# Hộp thư thử (chỉ khi chưa dùng SMTP thật), có mật khẩu
+handle /mailpit* {
+	basic_auth {
+		{$MAILPIT_USER} {$MAILPIT_HASH}
+	}
+	reverse_proxy mailpit:8025
+}
+
+# Không công khai Swagger và actuator ngoài health
+@private path /swagger-ui* /v3/api-docs* /actuator/*
+handle @private {
+	respond 404
+}
+
+handle {
+	reverse_proxy web:80
+}
+
+header {
+	Strict-Transport-Security "max-age=31536000"
+	-Server
+}
