@@ -1,0 +1,44 @@
+# Cấu hình cho integration test: Postgres và Redis do Testcontainers cấp (xem AbstractIntegrationTest).
+spring:
+  mail:
+    host: localhost
+    port: 2525
+  jpa:
+    properties:
+      hibernate:
+        format_sql: false
+
+app:
+  api-url: http://localhost:8080
+  frontend-url: http://localhost:5173
+  cors-origins: http://localhost:5173
+  scheduling:
+    enabled: false
+  security:
+    login-per-minute: 100000
+  jwt:
+    secret: integration-test-secret-integration-test-secret-0123456789
+  vnpay:
+    tmn-code: TESTTMN1
+    hash-secret: TESTHASHSECRETTESTHASHSECRET1234
+  momo:
+    partner-code: MOMOTEST
+    access-key: F8BBA842ECF85
+    secret-key: K951B6PE1waDMi640xX08PD3vg6EkVlz
+  oauth:
+    google-client-id: test-client.apps.googleusercontent.com
+    google-client-secret: test-secret
+    apple-client-id: vn.aurelia.test
+
+# JavaMailSender bị @MockBean thay thế nên health check mail không có JavaMailSenderImpl để kiểm tra
+# ("Beans must not be empty") → tắt trong test.
+management:
+  health:
+    mail:
+      enabled: false
+
+logging:
+  level:
+    root: WARN
+    vn.aurelia.hbs: INFO
+    org.testcontainers: INFO
