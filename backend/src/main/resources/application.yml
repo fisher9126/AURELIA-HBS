@@ -1,0 +1,98 @@
+server:
+  port: 8080
+  error:
+    include-message: never
+
+spring:
+  application:
+    name: aurelia-hbs
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/aurelia}
+    username: ${DB_USER:aurelia}
+    password: ${DB_PASSWORD:aurelia_dev}
+    hikari:
+      maximum-pool-size: 20
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc.time_zone: Asia/Ho_Chi_Minh
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    time-zone: Asia/Ho_Chi_Minh
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USER:}
+    password: ${MAIL_PASSWORD:}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 500ms
+      connect-timeout: 500ms
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+app:
+  zone: Asia/Ho_Chi_Minh
+  frontend-url: ${APP_FRONTEND_URL:http://localhost:5173}
+  api-url: ${APP_API_URL:http://localhost:8080}
+  cors-origins: ${APP_CORS_ORIGINS:http://localhost:5173}
+  mail-from: ${MAIL_FROM:stay@aureliaresort.vn}
+  jwt:
+    secret: ${JWT_SECRET:change-me-to-a-long-random-string-at-least-32-bytes}
+    access-ttl-minutes: 15
+    refresh-ttl-days: 7
+  security:
+    max-failed-logins: 5
+    lock-minutes: 15
+    reset-token-minutes: 30
+    login-per-minute: 10
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    public-url: ${MINIO_PUBLIC_URL:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:aurelia}
+    secret-key: ${MINIO_SECRET_KEY:aurelia_minio_dev}
+    bucket: aurelia-media
+  oauth:
+    google-client-id: ${GOOGLE_CLIENT_ID:}
+    google-client-secret: ${GOOGLE_CLIENT_SECRET:}
+    apple-client-id: ${APPLE_CLIENT_ID:}
+  vnpay:
+    tmn-code: ${VNPAY_TMN_CODE:}
+    hash-secret: ${VNPAY_HASH_SECRET:}
+    pay-url: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+    expire-minutes: 15
+  momo:
+    partner-code: ${MOMO_PARTNER_CODE:}
+    access-key: ${MOMO_ACCESS_KEY:}
+    secret-key: ${MOMO_SECRET_KEY:}
+    endpoint: ${MOMO_ENDPOINT:https://test-payment.momo.vn/v2/gateway/api/create}
+    expire-minutes: 15
+  cache:
+    enabled: ${APP_CACHE_ENABLED:true}
+    availability-seconds: 60
+    catalog-seconds: 600
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
