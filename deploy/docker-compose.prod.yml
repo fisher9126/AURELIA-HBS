@@ -1,0 +1,146 @@
+# Production trên VPS:  cd deploy && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# Chỉ mở cổng 80/443 (Caddy). PostgreSQL, Redis, S3, API không lộ ra Internet.
+name: aurelia
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-aurelia}
+      POSTGRES_USER: ${DB_USER:-aurelia}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Thiếu DB_PASSWORD}
+      TZ: Asia/Ho_Chi_Minh
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-aurelia} -d ${DB_NAME:-aurelia}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD:?Thiếu REDIS_PASSWORD}"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # Kho ảnh tương thích S3 (SeaweedFS thay MinIO — MinIO đã gỡ image miễn phí khỏi Docker Hub/Quay).
+  # Tài khoản ghi = MINIO_ACCESS_KEY/MINIO_SECRET_KEY; vô danh chỉ được đọc để ảnh phòng hiển thị công khai.
+  s3:
+    image: chrislusf/seaweedfs:4.47
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /tmp/s3.json <<JSON
+        {"identities":[
+          {"name":"aurelia","credentials":[{"accessKey":"${MINIO_ACCESS_KEY:-aurelia}","secretKey":"${MINIO_SECRET_KEY}"}],"actions":["Admin","Read","List","Tagging","Write"]},
+          {"name":"anonymous","actions":["Read"]}]}
+        JSON
+        exec weed server -dir=/data -ip.bind=0.0.0.0 -master.volumeSizeLimitMB=256 -volume.max=20 -s3 -s3.port=8333 -s3.config=/tmp/s3.json
+    volumes:
+      - s3data:/data
+
+  # Bắt email khi chưa cấu hình SMTP thật; xem tại https://<domain>/mailpit (có mật khẩu)
+  mailpit:
+    image: axllent/mailpit:v1.20
+    restart: unless-stopped
+    environment:
+      MP_WEBROOT: /mailpit
+
+  api:
+    build: ../backend
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      s3: { condition: service_started }
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_OPTS: "-XX:MaxRAMPercentage=60 -XX:+UseSerialGC -Duser.timezone=Asia/Ho_Chi_Minh"
+      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-aurelia}
+      DB_USER: ${DB_USER:-aurelia}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Thiếu JWT_SECRET}
+      MAIL_HOST: ${MAIL_HOST:-mailpit}
+      MAIL_PORT: ${MAIL_PORT:-1025}
+      MAIL_USER: ${MAIL_USER:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-false}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: ${MAIL_STARTTLS:-false}
+      MAIL_FROM: ${MAIL_FROM:-stay@aureliaresort.vn}
+      MINIO_ENDPOINT: http://s3:8333
+      MINIO_PUBLIC_URL: ${PUBLIC_URL:?Thiếu PUBLIC_URL}/media
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-aurelia}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      APP_API_URL: ${PUBLIC_URL}
+      APP_FRONTEND_URL: ${PUBLIC_URL}
+      APP_CORS_ORIGINS: ${PUBLIC_URL}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
+      VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-}
+      MOMO_PARTNER_CODE: ${MOMO_PARTNER_CODE:-}
+      MOMO_ACCESS_KEY: ${MOMO_ACCESS_KEY:-}
+      MOMO_SECRET_KEY: ${MOMO_SECRET_KEY:-}
+
+  web:
+    build: ../frontend
+    restart: unless-stopped
+    depends_on: [api]
+
+  # Cổng duy nhất ra Internet. Có SITE_ADDRESS là tên miền → Caddy tự xin chứng chỉ HTTPS Let's Encrypt.
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on: [web, s3, mailpit]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      MAILPIT_USER: ${MAILPIT_USER:-admin}
+      MAILPIT_HASH: ${MAILPIT_HASH:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # Sao lưu CSDL mỗi ngày lúc 02:00, giữ 14 bản trong deploy/backups
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+      TZ: Asia/Ho_Chi_Minh
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          now=$$(date +%H%M)
+          if [ "$$now" = "0200" ]; then
+            f=/backups/aurelia-$$(date +%F).sql.gz
+            pg_dump -h postgres -U ${DB_USER:-aurelia} ${DB_NAME:-aurelia} | gzip > $$f && echo "backup $$f"
+            ls -1t /backups/*.sql.gz | tail -n +15 | xargs -r rm -f
+            sleep 61
+          fi
+          sleep 30
+        done
+
+volumes:
+  pgdata:
+  s3data:
+  caddy_data:
+  caddy_config:
